@@ -23,7 +23,6 @@ docker run -d \
     -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
     -e GOOGLE_CLOUD_PROJECT=<your-gcp-project-id> \
     -e GCS_BUCKET=<your-gcs-bucket> \
-    -e PROJECT=<your-gcp-project-id> \
     -e DATASET=<your-bigquery-dataset> \
     -e TABLE=<your-bigquery-table> \
     -e KAFKA_BOOTSTRAP=<your-kafka-broker-address> \
@@ -40,7 +39,6 @@ docker run -d \
     -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
     -e GOOGLE_CLOUD_PROJECT=inbound-respect-455808-r4 \
     -e GCS_BUCKET=spark-bigquery-68686 \
-    -e PROJECT=inbound-respect-455808-r4 \
     -e DATASET=financial_transactions \
     -e TABLE=fraud_prediction_2 \
     -e KAFKA_BOOTSTRAP=34.135.150.218:9092 \

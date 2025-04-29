@@ -8,12 +8,12 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 
 # === Config ===
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 GCS_BUCKET = os.getenv("GCS_BUCKET")
-PROJECT = os.getenv("PROJECT")
 DATASET = os.getenv("DATASET")
 TABLE = os.getenv("TABLE")
 GCS_BUCKET_CHECKPOINT = f"gs://{GCS_BUCKET}/checkpoints/bigquery"
-BQ_TABLE_REF = f"{PROJECT}.{DATASET}.{TABLE}"
+BQ_TABLE_REF = f"{GOOGLE_CLOUD_PROJECT}.{DATASET}.{TABLE}"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP")
 TOPIC = os.getenv("TOPIC")
 SCHEMA_URL = os.getenv("SCHEMA_URL")
