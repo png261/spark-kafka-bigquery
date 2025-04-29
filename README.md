@@ -29,12 +29,12 @@ docker run -d \
     -e TOPIC=<your-kafka-topic> \
     -e SCHEMA_URL=<your-schema-registry-url> \
     -e PREDICTOR_API=<your-predictor-api-url> \
-    <your-docker-image-name>
-
+    spark-kafka-bigquery-app
 ```
 Forexample:
 ```
 docker run -d \
+    --network host \
     -v $(pwd)/service-account-key.json:/app/service-account-key.json \
     -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
     -e GOOGLE_CLOUD_PROJECT=inbound-respect-455808-r4 \
@@ -42,8 +42,8 @@ docker run -d \
     -e DATASET=financial_transactions \
     -e TABLE=fraud_prediction_2 \
     -e KAFKA_BOOTSTRAP=34.135.150.218:9092 \
-    -e TOPIC=fulll3 \
+    -e TOPIC=transactions_inputx \
     -e SCHEMA_URL=http://34.170.91.127:8081 \
-    -e PREDICTOR_API=http://127.0.0.1:8000 \
+    -e PREDICTOR_API=http://127.0.0.1:8000/predict \
     spark-kafka-bigquery-app
 ```
