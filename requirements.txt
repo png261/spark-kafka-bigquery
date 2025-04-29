@@ -1,2 +1,10 @@
 requests
 numpy
+pandas
+confluent_kafka
+joblib
+requests
+httpx
+attrs
+cachetools
+authlib
