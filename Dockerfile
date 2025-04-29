@@ -25,7 +25,6 @@ ENV PREDICTOR_API=${PREDICTOR_API}
 
 # Set entrypoint to spark-submit with all required packages and jars
 CMD ["spark-submit", "--repositories", "https://packages.confluent.io/maven", \
-    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5", \
     "--jars", "/opt/spark/jars/*", \
     "/app/app/main.py"]
 
