@@ -26,6 +26,7 @@ COLUMNS = [
     "dob", "trans_num", "unix_time", "merch_lat", "merch_long"
 ]
 
+
 # === Spark Session ===
 spark = SparkSession.builder \
     .appName("PySpark-Kafka-BQ") \
@@ -58,7 +59,7 @@ def get_prediction_from_fastapi(transaction_data):
         response = requests.post(PREDICTOR_API, json=transaction_data)
         if response.status_code == 200:
             prediction = response.json()
-            return prediction['is_fraud']
+            return int(prediction['is_fraud'])
         else:
             return 0  # Default to no fraud if the API fails
     except Exception as e:
