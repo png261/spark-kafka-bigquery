@@ -1,7 +1,7 @@
 import os
 import requests
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, substring, udf
+from pyspark.sql.functions import current_timestamp, col, substring, udf
 from pyspark.sql.avro.functions import from_avro
 from pyspark.sql.types import IntegerType, BooleanType
 from confluent_kafka.schema_registry import SchemaRegistryClient
@@ -79,7 +79,11 @@ predicted_df = decoded_df.withColumn(
 
 final_df = predicted_df.select(
     col("trans_num").cast("string").alias("trans_id"),
-    (col("prediction") == 1).cast(BooleanType()).alias("is_fraud")
+    (col("prediction") == 1).cast(BooleanType()).alias("is_fraud"),
+    col("produced_timestamp"),
+    (current_timestamp().cast("long") * 1000).alias("processed_timestamp"),
+    ((current_timestamp().cast("long") * 1000 -
+     col("produced_timestamp")).cast("long")).alias("latency_ms")
 )
 
 # === Write Function ===
