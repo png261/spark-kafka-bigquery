@@ -2,7 +2,7 @@
 ## How to run
 ### 1. Pull the Docker Image
 ```
-docker pull ghcr.io/png261/fraud-dection-model-microservice:main
+docker pull ghcr.io/png261/spark-kafka-bigquery:main
 
 ```
 ### 2. Run the Docker Container
