@@ -26,7 +26,7 @@ sudo docker run \
   -v <path-to-your-local-service-account-key.json>:/app/service-account-key.json \
   -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
   -e SPARK_MODE=master \
-  -d --name spark-master ghcr.io/png261/spark-kafka-bigquery
+  -d --name spark-master ghcr.io/png261/spark-kafka-bigquery:main
 ```
 ### 4. Get the Spark Master URL
 After the master container is running, get the **SPARK_MASTER_URL**:
@@ -45,7 +45,7 @@ sudo docker run \
   -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
   -e SPARK_MODE=worker \
   -e SPARK_MASTER_URL=<YOUR_SPARK_MASTER_URL> \
-  -d --name spark-worker ghcr.io/png261/spark-kafka-bigquery
+  -d --name spark-worker ghcr.io/png261/spark-kafka-bigquery:main
 ```
 
 ### 6. Submit the PySpark Job
