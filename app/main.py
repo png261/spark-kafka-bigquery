@@ -1,19 +1,27 @@
 import os
 import joblib
+from dotenv import load_dotenv
 import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, substring, udf, current_timestamp
 from pyspark.sql.avro.functions import from_avro
 from pyspark.sql.types import IntegerType, BooleanType
 from confluent_kafka.schema_registry import SchemaRegistryClient
+load_dotenv()
 
 # === Config ===
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account-key.json"
-GCS_BUCKET, PROJECT, DATASET, TABLE = "spark-bigquery-68686", "inbound-respect-455808-r4", "financial_transactions", "fraud_prediction_2"
-BQ_TABLE_REF = f"{PROJECT}.{DATASET}.{TABLE}"
-KAFKA_BOOTSTRAP, TOPIC = "35.184.44.247:9092", "transactions_input_with_timestamp"
-SCHEMA_URL = "http://34.170.91.127:8081"
-SCHEMA_SUBJECT = f"{TOPIC}-value"
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GCS_BUCKET = os.getenv("GCS_BUCKET")
+BIGQUERY_DATASET = os.getenv("BIGQUERY_DATASET")
+BIGQUERY_TABLE = os.getenv("BIGQUERY_TABLE")
+GCS_BUCKET_CHECKPOINT = f"gs://{GCS_BUCKET}/checkpoints/bigquery"
+BQ_TABLE_REF = f"{GOOGLE_CLOUD_PROJECT}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
+SCHEMA_URL = os.getenv("SCHEMA_URL")
+SCHEMA_SUBJECT = f"{KAFKA_TOPIC}-value"
+
 MODEL_PATH = "model.pkl"
 
 COLUMNS = [
@@ -42,7 +50,7 @@ model = spark.sparkContext.broadcast(joblib.load(MODEL_PATH))
 # === Kafka Stream & Avro Decode ===
 kafka_df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP) \
-    .option("subscribe", TOPIC).option("startingOffsets", "latest").load()
+    .option("subscribe", KAFKA_TOPIC).option("startingOffsets", "latest").load()
 
 decoded_df = kafka_df.select(substring("value", 6, 1000000).alias("avro_value")) \
     .select(from_avro("avro_value", schema_str).alias("data")).select("data.*")
@@ -86,4 +94,3 @@ try:
         .option("truncate", "false").start().awaitTermination()
 except Exception as e:
     print("Streaming error:", e)
-

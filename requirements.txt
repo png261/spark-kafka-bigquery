@@ -9,3 +9,4 @@ attrs
 cachetools
 authlib
 scikit-learn
+dotenv
