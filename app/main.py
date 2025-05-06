@@ -82,7 +82,7 @@ def write_to_bq(df, _):
     df.write.format("bigquery") \
         .option("table", BQ_TABLE_REF) \
         .option("temporaryGcsBucket", GCS_BUCKET) \
-        .option("project", PROJECT) \
+        .option("project", GOOGLE_CLOUD_PROJECT) \
         .mode("append").save()
 
 
