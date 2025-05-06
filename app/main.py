@@ -21,7 +21,6 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 SCHEMA_URL = os.getenv("SCHEMA_URL")
 SCHEMA_SUBJECT = f"{KAFKA_TOPIC}-value"
-
 MODEL_PATH = "model.pkl"
 
 COLUMNS = [
@@ -43,17 +42,22 @@ spark = SparkSession.builder \
 spark.sparkContext.setLogLevel("WARN")
 
 # === Schema Registry & Model ===
-schema_str = SchemaRegistryClient({'url': SCHEMA_URL}).get_latest_version(
-    SCHEMA_SUBJECT).schema.schema_str
+schema_str = SchemaRegistryClient({'url': SCHEMA_URL}) \
+    .get_latest_version(SCHEMA_SUBJECT).schema.schema_str
 model = spark.sparkContext.broadcast(joblib.load(MODEL_PATH))
 
 # === Kafka Stream & Avro Decode ===
 kafka_df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP) \
-    .option("subscribe", KAFKA_TOPIC).option("startingOffsets", "latest").load()
+    .option("subscribe", KAFKA_TOPIC) \
+    .option("startingOffsets", "latest") \
+    .option("failOnDataLoss", "false") \
+    .load()
 
-decoded_df = kafka_df.select(substring("value", 6, 1000000).alias("avro_value")) \
-    .select(from_avro("avro_value", schema_str).alias("data")).select("data.*")
+decoded_df = kafka_df \
+    .select(substring("value", 6, 1000000).alias("avro_value")) \
+    .select(from_avro("avro_value", schema_str).alias("data")) \
+    .select("data.*")
 
 # === Prediction UDF ===
 
@@ -78,19 +82,34 @@ final_df = predicted_df.select(
 # === Write Function ===
 
 
-def write_to_bq(df, _):
-    df.write.format("bigquery") \
-        .option("table", BQ_TABLE_REF) \
-        .option("temporaryGcsBucket", GCS_BUCKET) \
-        .option("project", GOOGLE_CLOUD_PROJECT) \
-        .mode("append").save()
+def write_to_bq(df, batch_id):
+    try:
+        df.write.format("bigquery") \
+            .option("table", BQ_TABLE_REF) \
+            .option("temporaryGcsBucket", GCS_BUCKET) \
+            .option("project", GOOGLE_CLOUD_PROJECT) \
+            .mode("append").save()
+    except Exception as e:
+        print(f"Error writing batch {batch_id} to BigQuery: {str(e)}")
+        raise
 
 
 # === Streaming ===
 try:
-    final_df.writeStream.foreachBatch(write_to_bq) \
-        .option("checkpointLocation", f"gs://{GCS_BUCKET}/checkpoints/bigquery").start()
-    final_df.writeStream.outputMode("append").format("console") \
-        .option("truncate", "false").start().awaitTermination()
+    # BigQuery streaming query
+    bq_query = final_df.writeStream \
+        .foreachBatch(write_to_bq) \
+        .option("checkpointLocation", f"gs://{GCS_BUCKET}/checkpoints/bigquery") \
+        .start()
+
+    # Console streaming query
+    console_query = final_df.writeStream \
+        .outputMode("append") \
+        .format("console") \
+        .option("truncate", "false") \
+        .start()
+
+    # Wait for either query to terminate
+    spark.streams.awaitAnyTermination()
 except Exception as e:
     print("Streaming error:", e)
