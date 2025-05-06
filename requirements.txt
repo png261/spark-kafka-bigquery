@@ -8,3 +8,4 @@ httpx
 attrs
 cachetools
 authlib
+scikit-learn
