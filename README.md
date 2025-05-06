@@ -22,8 +22,8 @@ Bind your `service-account-key.json` file when launching the container:
 ```
 sudo docker run \
   --network host \
-  --env-file .env \
-  -v <path-to-your-service-account-key.json>:/app/service-account-key.json \
+  --env-file <path-to-your-local-.env>: \
+  -v <path-to-your-local-service-account-key.json>:/app/service-account-key.json \
   -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
   -e SPARK_MODE=master \
   -d --name spark-master ghcr.io/png261/spark-kafka-bigquery
@@ -40,8 +40,8 @@ Replace <YOUR_SPARK_MASTER_URL> with the URL from the previous step:
 ```
 sudo docker run \
   --network host \
-  --env-file .env \
-  -v <path-to-your-service-account-key.json>:/app/service-account-key.json \
+  --env-file <path-to-your-local-.env>: \
+  -v <path-to-your-local-service-account-key.json>:/app/service-account-key.json \
   -e GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json \
   -e SPARK_MODE=worker \
   -e SPARK_MASTER_URL=<YOUR_SPARK_MASTER_URL> \
