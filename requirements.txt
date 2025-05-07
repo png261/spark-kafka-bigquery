@@ -10,3 +10,4 @@ cachetools
 authlib
 scikit-learn
 dotenv
+pyarrow
