@@ -4,13 +4,15 @@ import joblib
 from datetime import datetime
 from dotenv import load_dotenv
 import pandas as pd
+import h2o
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, substring, current_timestamp, struct
+from pyspark.sql.functions import col, substring, current_timestamp, struct, monotonically_increasing_id, datediff, current_date
 from pyspark.sql.avro.functions import from_avro
-from pyspark.sql.types import IntegerType, BooleanType
+from pyspark.sql.types import IntegerType, BooleanType, DoubleType
 from pyspark.sql.functions import pandas_udf
 from typing import Iterator
 from confluent_kafka.schema_registry import SchemaRegistryClient
+from pysparkling import H2OContext
 
 load_dotenv()
 
@@ -26,17 +28,12 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 SCHEMA_URL = os.getenv("SCHEMA_URL")
 SCHEMA_SUBJECT = f"{KAFKA_TOPIC}-value"
-MODEL_PATH = "model.pkl"
-
-COLUMNS = [
-    "trans_date_trans_time", "cc_num", "merchant", "category", "amt", "first", "last",
-    "gender", "street", "city", "state", "zip", "lat", "long", "city_pop", "job",
-    "dob", "trans_num", "unix_time", "merch_lat", "merch_long"
-]
+# Path to H2O MOJO or binary model (e.g., in GCS)
+MODEL_PATH = "model_binary"
 
 # === Spark Session ===
 spark = SparkSession.builder \
-    .appName("PySpark-Kafka-BQ-Optimized") \
+    .appName("PySpark-Kafka-BQ-H2O") \
     .config("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem") \
     .config("spark.hadoop.fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS") \
     .config("spark.hadoop.fs.gs.auth.service.account.enable", "true") \
@@ -53,17 +50,27 @@ spark = SparkSession.builder \
 
 spark.sparkContext.setLogLevel("WARN")
 
-# === Load Schema & Model ===
+# === Initialize H2O ===
+h2o.init(strict_version_check=False, enable_web=False)  # Initialize H2O cluster
+hc = H2OContext.getOrCreate()  # Initialize H2OContext
+
+# === Load Schema ===
 try:
     schema_registry_client = SchemaRegistryClient({'url': SCHEMA_URL})
     schema_str = schema_registry_client.get_latest_version(
         SCHEMA_SUBJECT).schema.schema_str
 except Exception as e:
+    print(f"Error loading schema: {e}")
     raise
 
+# === Load H2O Model ===
 try:
-    model = joblib.load(MODEL_PATH)
+    if MODEL_PATH.endswith(".zip"):  # MOJO model
+        model = h2o.import_mojo(MODEL_PATH)
+    else:  # H2O binary model
+        model = h2o.load_model(MODEL_PATH)
 except Exception as e:
+    print(f"Error loading H2O model: {e}")
     raise
 
 # === Read Kafka Stream ===
@@ -83,60 +90,93 @@ kafka_df = spark.readStream.format("kafka") \
 decoded_df = kafka_df \
     .select(substring(col("value"), 6, 1000000).alias("avro_value")) \
     .select(from_avro(col("avro_value"), schema_str).alias("data")) \
-    .select("data.*") \
-    .select(*COLUMNS, "produced_timestamp")
+    .select("data.*")
 
-# === Optimized Iterator-based UDF ===
-
-
-@pandas_udf(IntegerType())
-def predict_batch(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.Series]:
-    for df in batch_iter:
-        df.columns = COLUMNS
-        yield pd.Series(model.predict(df))
+# === Prediction with H2O ===
 
 
-# Apply model with optimized column selection
-predicted_df = decoded_df.withColumn(
-    "prediction",
-    predict_batch(struct(*COLUMNS))
-)
+def prepare_batch_for_prediction(batch_df):
+    if 'id' in batch_df.columns:
+        batch_df = batch_df.withColumnRenamed('id', 'Unnamed: 0')
+    # Get feature names and domains from model
+    # exclude response col
+    feature_names = model._model_json['output']['names'][:-1]
+    # exclude response col
+    domains = model._model_json['output']['domains'][:-1]
 
-# === Final Output Schema ===
-final_df = predicted_df.select(
-    col("trans_num").cast("string").alias("trans_id"),
-    (col("prediction") == 1).cast(BooleanType()).alias("is_fraud"),
-    col("produced_timestamp"),
-    (current_timestamp().cast("long") * 1000).alias("processed_timestamp"),
-    ((current_timestamp().cast("long") * 1000 -
-     col("produced_timestamp")).cast("long")).alias("latency_ms")
-)
+    # Split into numeric and categorical
+    categorical_features = [feature for feature, domain in zip(
+        feature_names, domains) if domain is not None]
+    numeric_features = [
+        feature for feature in feature_names if feature not in categorical_features]
 
-# === BigQuery Write Function ===
+    # Cast numeric features
+    for colname in numeric_features:
+        batch_df = batch_df.withColumn(colname, col(colname).cast("double"))
+
+    # Cast categorical features to string
+    for colname in categorical_features:
+        batch_df = batch_df.withColumn(colname, col(colname).cast("string"))
+
+    return batch_df, feature_names, categorical_features
 
 
-def write_to_bigquery(df, epoch_id):
+def predict_with_h2o(batch_df, batch_id):
     try:
-        df.write \
+        batch_df = batch_df.withColumn(
+            "_temp_id", monotonically_increasing_id())
+
+        # Prepare batch with correct column types
+        batch_df, feature_names, categorical_features = prepare_batch_for_prediction(
+            batch_df)
+
+        h2o_frame = hc.asH2OFrame(batch_df)
+
+        # Convert categorical features in H2OFrame to factors
+        for feature in categorical_features:
+            h2o_frame[feature] = h2o_frame[feature].asfactor()
+
+        predictions = model.predict(h2o_frame)
+        pred_df = hc.asSparkFrame(predictions).withColumn(
+            "_temp_id", monotonically_increasing_id())
+        joined_df = batch_df.join(pred_df, "_temp_id", "inner")
+
+        result_df = joined_df.select(
+            col("trans_num").cast("string").alias("trans_id"),
+            (col("predict") == "1").cast(BooleanType()).alias("is_fraud"),
+            col("produced_timestamp"),
+            (current_timestamp().cast("long") * 1000).alias("processed_timestamp"),
+            ((current_timestamp().cast("long") * 1000 -
+             col("produced_timestamp")).cast("long")).alias("latency_ms")
+        )
+
+        result_df.write \
             .format("bigquery") \
             .option("table", BQ_TABLE_REF) \
             .option("temporaryGcsBucket", GCS_BUCKET) \
             .mode("append") \
             .save()
+
+        print(f"Batch {batch_id} written to BigQuery table {BQ_TABLE_REF}")
+
     except Exception as e:
+        print(f"Error in batch {batch_id}: {e}")
         raise
 
 
 # === Streaming Query ===
 try:
-    query = final_df.writeStream \
-        .foreachBatch(write_to_bigquery) \
+    query = decoded_df.writeStream \
+        .foreachBatch(predict_with_h2o) \
         .option("checkpointLocation", GCS_BUCKET_CHECKPOINT) \
         .trigger(processingTime="5 seconds") \
         .start()
 
     query.awaitTermination()
 except Exception as e:
+    print(f"Streaming query failed: {e}")
     raise
 finally:
-    spark.stop()
+    hc.stop()  # Stop H2OContext
+    h2o.cluster().shutdown()  # Shutdown H2O cluster
+    spark.stop()  # Stop Spark session
